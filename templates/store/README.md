@@ -8,7 +8,7 @@ publish script checks it against both stores' rules before every upload.
 ```
 store/
 ├── store.json                   build, package and store IDs (no secrets)
-├── .env.store.example           copy to ../.env.store for local publishing
+├── .env.store.example           copy to ../.env.store for local publishing (or share one in the toolkit)
 ├── listing/<locale>/
 │   ├── description.txt          full description, plain text
 │   └── search-terms.txt         Edge only

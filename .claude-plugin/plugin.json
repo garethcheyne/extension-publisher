@@ -1,0 +1,9 @@
+{
+  "name": "extension-publisher",
+  "description": "Write store listings for Chromium extensions, set up Chrome Web Store and Edge Add-ons credentials, and publish with the extension-publisher toolkit.",
+  "version": "1.0.0",
+  "author": { "name": "Gareth Cheyne" },
+  "homepage": "https://github.com/garethcheyne/extension-publisher",
+  "repository": "https://github.com/garethcheyne/extension-publisher",
+  "keywords": ["chrome-web-store", "edge-add-ons", "browser-extension", "publishing"]
+}

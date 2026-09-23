@@ -77,6 +77,8 @@ foreach ($file in [System.IO.Directory]::EnumerateFiles($templates, '*', 'AllDir
     $relative = $file.Substring($templates.Length + 1)
     Write-New (Join-Path $store $relative) (Get-Content $file -Raw)
 }
+# The credentials template lives at the toolkit root, where it also documents the shared .env.store
+Write-New (Join-Path $store '.env.store.example') (Get-Content (Join-Path $PSScriptRoot '.env.store.example') -Raw)
 
 # ── permissions.md, from the manifest ──
 # Hints only - each section still says TODO, because the justification has to
@@ -146,11 +148,15 @@ if ($icon -and -not (Test-Path $iconTarget)) {
 
 # ── Keep local secrets out of git ──
 
+# Google names a downloaded service account key <project-id>-<12 hex digits>.json
+$secretPatterns = @('.env.store', '*.service-account.json', '*-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].json')
 $gitignore = Join-Path $Project '.gitignore'
-$ignored = (Test-Path $gitignore) -and (Select-String -Path $gitignore -Pattern '^\s*/?\.env\.store\s*$' -Quiet)
-if (-not $ignored) {
-    Add-Content -Path $gitignore -Value "`n# Store publishing secrets (extension-publisher)`n.env.store`n*.service-account.json"
-    $created.Add('.gitignore (added .env.store)')
+$present = if (Test-Path $gitignore) { @(Get-Content $gitignore | ForEach-Object { $_.Trim().TrimStart('/') }) } else { @() }
+$add = @($secretPatterns | Where-Object { $_ -notin $present })
+if ($add) {
+    $header = if ('.env.store' -in $add) { "`n# Store publishing secrets (extension-publisher)" } else { '' }
+    Add-Content -Path $gitignore -Value ((@($header) + $add | Where-Object { $_ }) -join "`n")
+    $created.Add(".gitignore (added $($add -join ', '))")
 }
 
 # ── Report ──

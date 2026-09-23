@@ -1,0 +1,13 @@
+#!/bin/sh
+# Refuses any commit that stages a private key, whatever the file is called.
+# Enabled per clone with:  git config core.hooksPath .githooks
+
+found=$(git diff --cached --name-only --diff-filter=ACMR -z |
+    xargs -0 -r git grep --cached -l -I -E '"private_key": *"-----BEGIN|^-----BEGIN [A-Z ]*PRIVATE KEY-----$' -- 2>/dev/null)
+
+if [ -n "$found" ]; then
+    echo "Commit blocked: these staged files contain a private key or service account key:" >&2
+    echo "$found" | sed 's/^/  /' >&2
+    echo "Unstage them (git restore --staged <file>) and keep keys out of the repo." >&2
+    exit 1
+fi

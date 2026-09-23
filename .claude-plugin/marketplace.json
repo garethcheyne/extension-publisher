@@ -1,0 +1,12 @@
+{
+  "name": "extension-publisher",
+  "owner": { "name": "Gareth Cheyne" },
+  "description": "Tools for publishing Chromium extensions to the Chrome Web Store and Edge Add-ons.",
+  "plugins": [
+    {
+      "name": "extension-publisher",
+      "source": "./",
+      "description": "Write store listings for Chromium extensions, set up Chrome Web Store and Edge Add-ons credentials, and publish with the extension-publisher toolkit."
+    }
+  ]
+}

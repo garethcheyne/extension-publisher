@@ -118,3 +118,76 @@ Describe 'New-ExtensionZip' {
         $zip.Stripped | Should -Be @('key', 'update_url')
     }
 }
+
+Describe 'New-ExtensionZip with a key in the build output' {
+    It 'refuses to package a service account key, whatever it is called' {
+        $src = Join-Path $TestDrive 'withkey'
+        New-Item -ItemType Directory -Force $src | Out-Null
+        '{ "manifest_version": 3 }' | Set-Content "$src/manifest.json"
+        # Split so the repo's pre-commit hook doesn't take this test for a real key
+        ('{ "type": "service_account", "private_key": "-----' + 'BEGIN PRIVATE KEY-----\nMII\n-----END PRIVATE KEY-----\n" }') | Set-Content "$src/config.json"
+        { New-ExtensionZip -SourceDirectory $src -Destination "$TestDrive/key.zip" } | Should -Throw '*config.json is a service account key*'
+    }
+}
+
+Describe 'Import-StoreSecrets' {
+    BeforeEach {
+        $saved = Save-StoreSecrets
+        foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $null) }
+        $toolkit = Join-Path $TestDrive "toolkit-$([guid]::NewGuid().ToString('n'))"
+        $project = Join-Path $TestDrive "project-$([guid]::NewGuid().ToString('n'))"
+        New-Item -ItemType Directory -Force $toolkit, $project | Out-Null
+        "EDGE_CLIENT_ID=shared`nEDGE_API_KEY=shared-key`nCHROME_SERVICE_ACCOUNT_KEY_FILE=keys/sa.json" | Set-Content "$toolkit/.env.store"
+    }
+    AfterEach { Restore-StoreSecrets $saved }
+
+    It 'uses the toolkit''s file, with its relative key path resolved against the toolkit' {
+        Import-StoreSecrets -ProjectPath $project -ToolkitPath $toolkit | Should -Be @('the toolkit''s .env.store')
+        $env:EDGE_CLIENT_ID | Should -Be 'shared'
+        $env:CHROME_SERVICE_ACCOUNT_KEY_FILE | Should -Be (Join-Path $toolkit 'keys/sa.json')
+    }
+
+    It 'lets the project''s file win, and keeps its key path relative to the project' {
+        "EDGE_CLIENT_ID=mine`nCHROME_SERVICE_ACCOUNT_KEY_FILE=my.json" | Set-Content "$project/.env.store"
+        Import-StoreSecrets -ProjectPath $project -ToolkitPath $toolkit | Should -Be @('.env.store', 'the toolkit''s .env.store')
+        $env:EDGE_CLIENT_ID | Should -Be 'mine'
+        $env:EDGE_API_KEY | Should -Be 'shared-key'
+        $env:CHROME_SERVICE_ACCOUNT_KEY_FILE | Should -Be 'my.json'
+    }
+
+    It 'lets the real environment win over both, and drops unset Azure DevOps variables' {
+        $env:EDGE_CLIENT_ID = 'from-ci'
+        $env:EDGE_API_KEY = '$(EDGE_API_KEY)'
+        Import-StoreSecrets -ProjectPath $project -ToolkitPath $toolkit | Out-Null
+        $env:EDGE_CLIENT_ID | Should -Be 'from-ci'
+        $env:EDGE_API_KEY | Should -Be 'shared-key'
+    }
+}
+
+Describe 'Get-ChromeServiceAccount' {
+    BeforeEach { $saved = Save-StoreSecrets; foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $null) } }
+    AfterEach { Restore-StoreSecrets $saved }
+
+    It 'reads a key file relative to the project and restores escaped newlines' {
+        '{ "client_email": "sa@p.iam.gserviceaccount.com", "private_key": "line1\\nline2" }' | Set-Content "$TestDrive/sa.json"
+        $env:CHROME_SERVICE_ACCOUNT_KEY_FILE = 'sa.json'
+        $account = Get-ChromeServiceAccount -ProjectPath $TestDrive
+        $account.Email | Should -Be 'sa@p.iam.gserviceaccount.com'
+        $account.PrivateKey | Should -Be "line1`nline2"
+    }
+
+    It 'returns nothing when no account is set, and fails on a missing key file' {
+        Get-ChromeServiceAccount -ProjectPath $TestDrive | Should -BeNullOrEmpty
+        $env:CHROME_SERVICE_ACCOUNT_KEY_FILE = 'missing.json'
+        { Get-ChromeServiceAccount -ProjectPath $TestDrive } | Should -Throw '*doesn''t exist*'
+    }
+}
+
+Describe 'Get-Property' {
+    It 'follows a dotted path and returns $null for anything missing, under strict mode' {
+        $body = ConvertFrom-JsonOrNull '{ "error": { "message": "denied" } }'
+        Get-Property $body 'error.message' | Should -Be 'denied'
+        Get-Property $body 'error.code' | Should -BeNullOrEmpty
+        Get-Property (ConvertFrom-JsonOrNull 'not json') 'error.message' | Should -BeNullOrEmpty
+    }
+}

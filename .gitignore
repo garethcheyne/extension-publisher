@@ -1,5 +1,11 @@
 node_modules/
 *.zip
 .env*
-!templates/store/.env.store.example
-*.service-account.json
+!.env.store.example
+
+# Credentials never belong in git. Google names a service account key
+# <project>-<hex>.json, so ignore all JSON and list the files that are allowed.
+*.json
+!.claude-plugin/*.json
+*.pem
+*.p12

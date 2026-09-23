@@ -16,7 +16,8 @@
   (https://github.com/aklinker1/publish-browser-extension), pinned below.
 
   Settings: non-secret IDs live in store/store.json. Secrets come from the
-  environment, or locally from .env.store in the project (git-ignored):
+  environment, or locally from .env.store (git-ignored) in the project, then in
+  this toolkit's folder (shared by every extension; see .env.store.example):
     Chrome  CHROME_SERVICE_ACCOUNT_JSON (the key file's contents)
             or CHROME_SERVICE_ACCOUNT_KEY_FILE (its path)
             or CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL + CHROME_SERVICE_ACCOUNT_PRIVATE_KEY
@@ -80,14 +81,8 @@ function Stop-WithError([string]$Message) {
 
 function Write-Step([string]$Text) { Write-Host "`n> $Text" -ForegroundColor Cyan }
 
-# Azure DevOps passes an undefined variable through as the literal "$(NAME)"
-foreach ($name in 'CHROME_SERVICE_ACCOUNT_JSON', 'CHROME_SERVICE_ACCOUNT_KEY_FILE', 'CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL',
-    'CHROME_SERVICE_ACCOUNT_PRIVATE_KEY', 'CHROME_EXTENSION_ID', 'CHROME_PUBLISHER_ID', 'EDGE_CLIENT_ID', 'EDGE_API_KEY', 'EDGE_PRODUCT_ID') {
-    if ([Environment]::GetEnvironmentVariable($name) -match '^\$\(.+\)$') { [Environment]::SetEnvironmentVariable($name, $null) }
-}
-
 try { $config = Get-StoreConfig -ProjectPath $Project } catch { Stop-WithError $_.Exception.Message }
-if (Import-DotEnv (Join-Path $Project '.env.store')) { Write-Host '  loaded .env.store' -ForegroundColor DarkGray }
+foreach ($source in Import-StoreSecrets -ProjectPath $Project -ToolkitPath $PSScriptRoot) { Write-Host "  loaded $source" -ForegroundColor DarkGray }
 # Environment IDs load after .env.store, so re-read them
 $config = Get-StoreConfig -ProjectPath $Project
 
@@ -107,22 +102,9 @@ function Resolve-Credentials {
 
     if ('chrome' -in $Stores) {
         $chrome = $config.stores.chrome
-        $email = $env:CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL
-        $key = $env:CHROME_SERVICE_ACCOUNT_PRIVATE_KEY
-        $json = $env:CHROME_SERVICE_ACCOUNT_JSON
-        if (-not $json -and $env:CHROME_SERVICE_ACCOUNT_KEY_FILE) {
-            $file = $env:CHROME_SERVICE_ACCOUNT_KEY_FILE
-            if (-not [IO.Path]::IsPathRooted($file)) { $file = Join-Path $Project $file }
-            if (-not (Test-Path $file)) { Stop-WithError "CHROME_SERVICE_ACCOUNT_KEY_FILE points at $file, which doesn't exist." }
-            $json = Get-Content $file -Raw
-        }
-        if ($json) {
-            $account = $json | ConvertFrom-Json
-            $email = $account.client_email
-            $key = $account.private_key
-        }
-        # A key pasted into a single-line secret arrives with literal \n
-        if ($key) { $key = $key -replace '\\n', "`n" }
+        try { $account = Get-ChromeServiceAccount -ProjectPath $Project } catch { Stop-WithError $_.Exception.Message }
+        $email = if ($account) { $account.Email }
+        $key = if ($account) { $account.PrivateKey }
 
         if (-not $chrome.extensionId) { $missing += 'Chrome: stores.chrome.extensionId in store.json (or CHROME_EXTENSION_ID)' }
         if (-not $chrome.publisherId) { $missing += 'Chrome: stores.chrome.publisherId in store.json (or CHROME_PUBLISHER_ID)' }

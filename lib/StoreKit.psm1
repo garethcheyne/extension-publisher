@@ -1,6 +1,6 @@
 #Requires -Version 7.2
 <#
-  Shared functions for Publish-Extension.ps1 and New-StoreListing.ps1.
+  Shared functions for Publish-Extension.ps1, New-StoreListing.ps1 and Test-StoreConnection.ps1.
 
   Everything here is store knowledge (sizes, limits, which store needs what) or
   plumbing (config, zip, CI logging). Uploading is not done here - that is
@@ -97,6 +97,156 @@ function Import-DotEnv {
         }
     }
     $true
+}
+
+$script:SecretNames = @('CHROME_SERVICE_ACCOUNT_JSON', 'CHROME_SERVICE_ACCOUNT_KEY_FILE', 'CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL',
+    'CHROME_SERVICE_ACCOUNT_PRIVATE_KEY', 'CHROME_EXTENSION_ID', 'CHROME_PUBLISHER_ID', 'EDGE_CLIENT_ID', 'EDGE_API_KEY', 'EDGE_PRODUCT_ID')
+
+<#
+  Loads store secrets for a project into the environment: the project's
+  .env.store, then the toolkit's (shared by every extension). Earlier sources
+  win, and real environment variables win over both. Returns what was loaded.
+#>
+function Import-StoreSecrets {
+    param([Parameter(Mandatory)][string]$ProjectPath, [Parameter(Mandatory)][string]$ToolkitPath)
+    # Azure DevOps passes an undefined variable through as the literal "$(NAME)"
+    foreach ($name in $script:SecretNames) {
+        if ([Environment]::GetEnvironmentVariable($name) -match '^\$\(.+\)$') { [Environment]::SetEnvironmentVariable($name, $null) }
+    }
+    $loaded = @()
+    if (Import-DotEnv (Join-Path $ProjectPath '.env.store')) { $loaded += '.env.store' }
+    $hadKeyFile = [bool]$env:CHROME_SERVICE_ACCOUNT_KEY_FILE
+    if ($ToolkitPath -ne $ProjectPath -and (Import-DotEnv (Join-Path $ToolkitPath '.env.store'))) {
+        $loaded += 'the toolkit''s .env.store'
+        # A relative key file path in it means relative to the toolkit, not the project
+        $file = $env:CHROME_SERVICE_ACCOUNT_KEY_FILE
+        if (-not $hadKeyFile -and $file -and -not [IO.Path]::IsPathRooted($file)) { $env:CHROME_SERVICE_ACCOUNT_KEY_FILE = Join-Path $ToolkitPath $file }
+    }
+    $loaded
+}
+
+<# The store secret variables' current values, to put back with Restore-StoreSecrets. #>
+function Save-StoreSecrets {
+    $saved = @{}
+    foreach ($name in $script:SecretNames) { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
+    $saved
+}
+
+function Restore-StoreSecrets {
+    param([Parameter(Mandatory)][hashtable]$Saved)
+    foreach ($name in $Saved.Keys) { [Environment]::SetEnvironmentVariable($name, $Saved[$name]) }
+}
+
+<#
+  The Chrome service account from the environment, as @{ Email; PrivateKey }, or
+  $null when none is set. Accepts the key file's contents, its path (relative to
+  the project), or the two fields separately.
+#>
+function Get-ChromeServiceAccount {
+    param([Parameter(Mandatory)][string]$ProjectPath)
+    $email = $env:CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL
+    $key = $env:CHROME_SERVICE_ACCOUNT_PRIVATE_KEY
+    $json = $env:CHROME_SERVICE_ACCOUNT_JSON
+    if (-not $json -and $env:CHROME_SERVICE_ACCOUNT_KEY_FILE) {
+        $file = $env:CHROME_SERVICE_ACCOUNT_KEY_FILE
+        if (-not [IO.Path]::IsPathRooted($file)) { $file = Join-Path $ProjectPath $file }
+        if (-not (Test-Path $file)) { throw "CHROME_SERVICE_ACCOUNT_KEY_FILE points at $file, which doesn't exist." }
+        $json = Get-Content $file -Raw
+    }
+    if ($json) {
+        $account = $json | ConvertFrom-Json
+        $email = $account.client_email
+        $key = $account.private_key
+    }
+    if (-not ($email -and $key)) { return $null }
+    # A key pasted into a single-line secret arrives with literal \n
+    @{ Email = $email; PrivateKey = ($key -replace '\\n', "`n") }
+}
+
+# ── Store APIs (read-only checks) ──
+
+<# Parsed JSON, or $null for an empty or non-JSON body. #>
+function ConvertFrom-JsonOrNull {
+    param([string]$Text)
+    if (-not $Text) { return $null }
+    try { $Text | ConvertFrom-Json } catch { $null }
+}
+
+<# A dotted path ("error.message") into parsed JSON; $null where anything is missing, even under strict mode. #>
+function Get-Property {
+    param($Object, [Parameter(Mandatory)][string]$Path)
+    foreach ($name in $Path.Split('.')) {
+        if ($null -eq $Object) { return $null }
+        $property = $Object.PSObject.Properties[$name]
+        $Object = if ($property) { $property.Value } else { $null }
+    }
+    $Object
+}
+# Uploading is publish-browser-extension's job. These only prove the credentials
+# work and read what the stores will say, for Test-StoreConnection.ps1.
+
+<# Signs a service account JWT and exchanges it for an OAuth access token. #>
+function Get-ChromeAccessToken {
+    param(
+        [Parameter(Mandatory)][string]$Email,
+        [Parameter(Mandatory)][string]$PrivateKey,
+        [string]$Scope = 'https://www.googleapis.com/auth/chromewebstore.readonly'
+    )
+    $base64Url = { param([byte[]]$Bytes) [Convert]::ToBase64String($Bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_') }
+    $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $header = & $base64Url ([Text.Encoding]::UTF8.GetBytes('{"alg":"RS256","typ":"JWT"}'))
+    $claims = & $base64Url ([Text.Encoding]::UTF8.GetBytes((
+                [ordered]@{ iss = $Email; scope = $Scope; aud = 'https://oauth2.googleapis.com/token'; iat = $now; exp = $now + 300 } | ConvertTo-Json -Compress)))
+    $rsa = [Security.Cryptography.RSA]::Create()
+    try {
+        $rsa.ImportFromPem($PrivateKey)
+        $signature = & $base64Url ($rsa.SignData([Text.Encoding]::ASCII.GetBytes("$header.$claims"),
+                [Security.Cryptography.HashAlgorithmName]::SHA256, [Security.Cryptography.RSASignaturePadding]::Pkcs1))
+    } finally { $rsa.Dispose() }
+
+    $response = Invoke-WebRequest -Method Post -Uri 'https://oauth2.googleapis.com/token' -SkipHttpErrorCheck -Body @{
+        grant_type = 'urn:ietf:params:oauth:grant-type:jwt-bearer'
+        assertion  = "$header.$claims.$signature"
+    }
+    $body = ConvertFrom-JsonOrNull $response.Content
+    $token = Get-Property $body 'access_token'
+    if ($response.StatusCode -ne 200 -or -not $token) {
+        throw "Google refused the service account ($($response.StatusCode)): $((Get-Property $body 'error_description') ?? (Get-Property $body 'error') ?? $response.Content)"
+    }
+    $token
+}
+
+<# Chrome Web Store API v2 fetchStatus: the published and in-review revisions of one item. #>
+function Get-ChromeItemStatus {
+    param([Parameter(Mandatory)][string]$AccessToken, [Parameter(Mandatory)][string]$PublisherId, [Parameter(Mandatory)][string]$ExtensionId)
+    $response = Invoke-WebRequest -Uri "https://chromewebstore.googleapis.com/v2/publishers/$PublisherId/items/${ExtensionId}:fetchStatus" `
+        -Headers @{ Authorization = "Bearer $AccessToken" } -SkipHttpErrorCheck
+    $body = ConvertFrom-JsonOrNull $response.Content
+    if ($response.StatusCode -ne 200) {
+        $hint = switch ($response.StatusCode) {
+            { $_ -in 403, 404 } { ' Check stores.chrome.extensionId and publisherId in store.json, and that the service account is added under Developer Dashboard → Account.' }
+        }
+        throw "Chrome Web Store: $($response.StatusCode) $((Get-Property $body 'error.message') ?? $response.Content)$hint"
+    }
+    $body
+}
+
+<#
+  The Edge Add-ons API has no read-only call for a product, only for upload and
+  publish operations. Asking for an operation that doesn't exist shows whether
+  the credentials are accepted (404) or not (401/403). It can't confirm the
+  product ID: an unknown product is also a 404.
+#>
+function Test-EdgeCredentials {
+    param([Parameter(Mandatory)][string]$ClientId, [Parameter(Mandatory)][string]$ApiKey, [string]$ProductId)
+    if (-not $ProductId) { $ProductId = [guid]::Empty }
+    $response = Invoke-WebRequest -Uri "https://api.addons.microsoftedge.microsoft.com/v1/products/$ProductId/submissions/draft/package/operations/$([guid]::Empty)" `
+        -Headers @{ Authorization = "ApiKey $ApiKey"; 'X-ClientID' = $ClientId } -SkipHttpErrorCheck
+    [pscustomobject]@{
+        StatusCode = [int]$response.StatusCode
+        Accepted   = [int]$response.StatusCode -notin 401, 403
+        Message    = $response.Content
+    }
 }
 
 # ── Manifest ──
@@ -242,7 +392,7 @@ function New-ExtensionZip {
     )
     Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
     # The folder names matter for extensions with no build step, zipped from the repo root
-    $always = @('.DS_Store', 'Thumbs.db', '*.crx', '*.pem', '.env', '.env.*', '.gitignore', '.gitattributes', '.git/*', '.github/*', '.vscode/*', 'node_modules/*')
+    $always = @('.DS_Store', 'Thumbs.db', '*.crx', '*.pem', '*.p12', '*.service-account.json', '.env', '.env.*', '.gitignore', '.gitattributes', '.git/*', '.github/*', '.vscode/*', 'node_modules/*')
     $patterns = @($always + $Exclude)
 
     New-Item -ItemType Directory -Force -Path (Split-Path $Destination) | Out-Null
@@ -259,6 +409,10 @@ function New-ExtensionZip {
             $file = [System.IO.FileInfo]::new($path)
             $relative = $path.Substring($root.Length + 1).Replace('\', '/')
             if ($patterns | Where-Object { $relative -like $_ -or $file.Name -like $_ }) { continue }
+            # A key under any other name would be published to everyone who installs the extension
+            if ($file.Extension -eq '.json' -and (Select-String -Path $file.FullName -Pattern '"private_key"\s*:\s*"-----BEGIN' -Quiet)) {
+                throw "$relative is a service account key; refusing to package it. Move it out of the build output."
+            }
 
             $entry = $zip.CreateEntry($relative, 'Optimal')
             $entry.LastWriteTime = $file.LastWriteTime

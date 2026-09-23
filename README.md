@@ -6,6 +6,7 @@ One toolkit to build, check and publish any Chromium extension to the **Chrome W
 | --- | --- |
 | [Publish-Extension.ps1](Publish-Extension.ps1) | Build → zip → check listing → upload and submit. The one entry point everything calls. |
 | [New-StoreListing.ps1](New-StoreListing.ps1) | Adds a `store/` folder to an extension repo. |
+| [Test-StoreConnection.ps1](Test-StoreConnection.ps1) | Checks the credentials sign in to both stores and shows Chrome's published and in-review versions. Read-only. |
 | [publish-extension.sh](publish-extension.sh) | The same, from bash/sh. |
 | [pipelines/azure/publish-extension.yml](pipelines/azure/publish-extension.yml) | Azure DevOps steps template. |
 | [action.yml](action.yml) | GitHub Actions composite action. |
@@ -114,11 +115,29 @@ Secrets: `EDGE_CLIENT_ID`, `EDGE_API_KEY`.
 
 | Where | How |
 | --- | --- |
-| Local | `.env.store` in the extension repo (git-ignored by `New-StoreListing.ps1`; template in `store/.env.store.example`). `CHROME_SERVICE_ACCOUNT_KEY_FILE=` can point at the JSON file instead of pasting it. |
+| Local, all extensions | `.env.store` in this toolkit's folder, for the publisher account's credentials shared by every extension you publish from here. Copy [.env.store.example](.env.store.example). |
+| Local, one extension | `.env.store` in the extension repo (git-ignored by `New-StoreListing.ps1`; template in `store/.env.store.example`). |
 | Azure DevOps | Variable group `extension-store-secrets` (ideally linked to Key Vault), all three marked secret. The template maps them into the script's environment. |
 | GitHub | Environment `extension-stores` with required reviewers, holding the three secrets. |
 
-Real environment variables always win over `.env.store`.
+`CHROME_SERVICE_ACCOUNT_KEY_FILE=` can point at the JSON key instead of pasting it; a relative path is relative to the folder of the `.env.store` that sets it. Real environment variables win over the extension's `.env.store`, which wins over the toolkit's.
+
+### Checking the connection
+
+```powershell
+./Test-StoreConnection.ps1                          # the shared credentials sign in
+./Test-StoreConnection.ps1 -ProjectPath ../*        # ...and every extension next to the toolkit
+```
+
+It reads, never uploads. Chrome: signs in with the service account, then shows each extension's published and in-review versions and any takedown or warning. Edge: checks the API key and client ID are accepted. Neither API can list a publisher's items, so it checks the IDs in each `store.json`, and Edge's API has no read call for a product at all, so a product ID is only proven by the first upload (`-Mode Publish -Stores edge -NoSubmit`). Exits 1 if anything fails.
+
+### Keeping keys safe
+
+Keys are kept out of git and out of the package:
+
+- This repo ignores every `*.json` except the plugin manifests, since Google names a key `<project>-<hex>.json`. `New-StoreListing.ps1` adds `.env.store`, `*.service-account.json` and that key-name pattern to an extension's `.gitignore`.
+- [.githooks/pre-commit](.githooks/pre-commit) blocks any commit that stages a private key, whatever the file is called. Turn it on once per clone: `git config core.hooksPath .githooks`
+- Packaging refuses to zip a service account key found in the build output, so one can't be shipped to the store.
 
 ## Pipelines
 
@@ -142,6 +161,25 @@ A repo in one system can't use the other's copy of the toolkit, so if you have e
 ### Versioning
 
 Both stores only accept a version higher than the last one uploaded. Bump `version` in the manifest (or package.json, if the build copies it from there) before tagging.
+
+## AI skills (Claude Code)
+
+The repo is also a Claude Code plugin with three skills, so an agent can do the parts that need reading the extension's code:
+
+| Skill | What it does |
+| --- | --- |
+| [store-listing](skills/store-listing/SKILL.md) | Reads the extension and writes `store/`: the description, single purpose, a justification per permission, data usage, privacy policy, search terms and reviewer notes. Then runs the checks. |
+| [publish-extension](skills/publish-extension/SKILL.md) | Fixes validation findings, bumps the version, checks credentials, and publishes (always confirming before the upload), locally or by tagging for CI. |
+| [store-setup](skills/store-setup/SKILL.md) | One-time setup: store IDs, the Chrome service account, the Edge API key, `.env.store`, and GitHub or Azure DevOps pipeline secrets. |
+
+Install it from Claude Code:
+
+```text
+/plugin marketplace add garethcheyne/extension-publisher
+/plugin install extension-publisher@extension-publisher
+```
+
+Then, in an extension repo, ask it things like "write the store listing for this extension" or "publish 1.4.0 to Edge as a draft". The skills run the scripts from the plugin's own copy of the toolkit.
 
 ## Tests
 

@@ -39,10 +39,10 @@ store/
 | images/promo-marquee-1400x560.png | Store listing → Marquee promo tile | Store listings → Large promotional tile |
 | images/screenshots/ | Store listing → Screenshots (up to 5) | Store listings → Screenshots (up to 6) |
 | listing/…/search-terms.txt | - | Store listings → Search terms |
-| privacy/single-purpose.md | Privacy → Single purpose | - |
-| privacy/permissions.md | Privacy → Permission justification | Properties → notes, if asked |
-| privacy/data-usage.md | Privacy → Data usage | Properties → privacy questions |
-| store.json listing.privacyPolicyUrl | Privacy → Privacy policy URL | Properties → Privacy policy URL |
+| privacy/single-purpose.md | Privacy → Single purpose | Privacy → Purpose |
+| privacy/permissions.md | Privacy → Permission justification | Privacy → Permission justifications |
+| privacy/data-usage.md | Privacy → Data usage | Privacy → Data usage certification |
+| store.json listing.privacyPolicyUrl | Privacy → Privacy policy URL | Privacy → Privacy policy |
 | review/reviewer-notes.md | Package → Test instructions | Availability → Notes for certification |
 
 Anything still reading **TODO** counts as missing, so a half-written listing can't be published.

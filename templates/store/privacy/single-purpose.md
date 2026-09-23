@@ -1,6 +1,7 @@
 # Single purpose
 
-Chrome Web Store → Privacy → **Single purpose description**. One or two sentences:
+Chrome Web Store → Privacy → **Single purpose description**, and Edge Partner
+Center → Privacy → **Purpose**. One or two sentences:
 an extension must have a single, narrow purpose that users can understand.
 
 TODO: e.g. "Adds keyboard shortcuts and a side panel for working ServiceNow incidents."

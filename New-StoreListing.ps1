@@ -122,7 +122,7 @@ $section = {
 if (-not (Test-Path $permFile)) {
     $body = @(
         '# Permission justifications', '',
-        'Chrome Web Store → Privacy → **Permission justification**: one box per permission.',
+        'Chrome Web Store → Privacy → **Permission justification**, and Edge Partner Center → Privacy → **Permission justifications**: one box per permission.',
         'Every `## heading` must match a permission in the manifest; the publish script checks both ways.', ''
     ) -join "`n"
     $body += "`n" + (($permissions | ForEach-Object { & $section $_ }) -join "`n")

@@ -1,6 +1,6 @@
 # Data usage
 
-Chrome Web Store → Privacy → **Data usage**, and Edge's privacy questions.
+Chrome Web Store → Privacy → **Data usage**, and Edge Partner Center → Privacy → **Data usage certification**.
 Tick the same boxes in the dashboard as are ticked here, so this file stays the record.
 
 ## What user data does the extension collect?

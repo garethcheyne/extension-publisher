@@ -1,0 +1,77 @@
+# GitHub composite action: build, check, package and (optionally) publish an
+# extension with Publish-Extension.ps1.
+#
+#   - uses: <owner>/extension-publisher@v1
+#     with: { mode: Publish }
+#     env:
+#       CHROME_SERVICE_ACCOUNT_JSON: ${{ secrets.CHROME_SERVICE_ACCOUNT_JSON }}
+#       EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+#       EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+#
+# Outputs: zip (path to the package) and version.
+name: Publish browser extension
+description: Build, check and publish a Chromium extension to the Chrome Web Store and Edge Add-ons.
+inputs:
+  mode:
+    description: Validate, Package, Publish or Status
+    default: Package
+  project-path:
+    description: The extension's repository root (holds store/store.json)
+    default: .
+  stores:
+    description: Comma-separated - chrome, edge. Empty = whatever store.json enables.
+    default: ''
+  zip-path:
+    description: Publish this zip instead of building
+    default: ''
+  no-submit:
+    description: Upload as a draft only
+    default: 'false'
+  staged:
+    description: 'Chrome: hold the approved version until published by hand'
+    default: 'false'
+  dry-run:
+    description: Check credentials, upload nothing
+    default: 'false'
+  node-version:
+    default: '22'
+  install:
+    description: Run npm ci before building
+    default: 'true'
+outputs:
+  zip:
+    value: ${{ steps.extension.outputs.extensionZip }}
+  version:
+    value: ${{ steps.extension.outputs.extensionVersion }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - if: inputs.install == 'true' && inputs.zip-path == ''
+      run: npm ci
+      shell: bash
+      working-directory: ${{ inputs.project-path }}
+
+    - id: extension
+      shell: pwsh
+      # Inputs go through env, not ${{ }} in the script, so they can't inject code
+      env:
+        IN_MODE: ${{ inputs.mode }}
+        IN_PROJECT: ${{ inputs.project-path }}
+        IN_STORES: ${{ inputs.stores }}
+        IN_ZIP: ${{ inputs.zip-path }}
+        IN_NO_SUBMIT: ${{ inputs.no-submit }}
+        IN_STAGED: ${{ inputs.staged }}
+        IN_DRY_RUN: ${{ inputs.dry-run }}
+      run: |
+        $params = @{ Mode = $env:IN_MODE; ProjectPath = $env:IN_PROJECT }
+        if ($env:IN_STORES) { $params.Stores = $env:IN_STORES -split '[,\s]+' | Where-Object { $_ } }
+        if ($env:IN_ZIP) { $params.ZipPath = $env:IN_ZIP }
+        if ($env:IN_NO_SUBMIT -eq 'true') { $params.NoSubmit = $true }
+        if ($env:IN_STAGED -eq 'true') { $params.Staged = $true }
+        if ($env:IN_DRY_RUN -eq 'true') { $params.DryRun = $true }
+        & "$env:GITHUB_ACTION_PATH/Publish-Extension.ps1" @params
+        exit $LASTEXITCODE

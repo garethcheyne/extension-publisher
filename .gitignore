@@ -1,0 +1,5 @@
+node_modules/
+*.zip
+.env*
+!templates/store/.env.store.example
+*.service-account.json

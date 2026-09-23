@@ -1,0 +1,6 @@
+TODO: The full store description, in plain text - neither store renders Markdown.
+
+Say what the extension does, who it is for, and what it needs access to and why.
+Edge requires 250-10,000 characters and a description that covers everything
+the extension does; Chrome reviewers reject descriptions that promise features
+the extension doesn't have.

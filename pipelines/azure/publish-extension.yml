@@ -1,0 +1,82 @@
+# Azure DevOps steps template: build, check, package and (optionally) publish an
+# extension with Publish-Extension.ps1. Consumed from another repository:
+#
+#   resources:
+#     repositories:
+#       - repository: publisher
+#         type: git
+#         name: <project>/extension-publisher
+#   steps:
+#     - checkout: self
+#       path: app
+#     - checkout: publisher
+#       path: publisher
+#     - template: pipelines/azure/publish-extension.yml@publisher
+#       parameters: { mode: Package }
+#
+# Secrets are read from pipeline variables of the same name (use a variable group
+# linked to Key Vault, or secret variables). Secret variables are never exposed to
+# scripts automatically, which is why each one is mapped under env: below.
+
+parameters:
+  - name: mode
+    type: string
+    default: Package
+    values: [Validate, Package, Publish, Status]
+  - name: projectPath
+    type: string
+    default: $(Pipeline.Workspace)/app
+  - name: publisherPath
+    type: string
+    default: $(Pipeline.Workspace)/publisher
+  - name: stores
+    type: string
+    default: ''          # "chrome,edge", "edge"… empty = whatever store.json enables
+  - name: zipPath
+    type: string
+    default: ''          # publish this zip instead of building
+  - name: noSubmit
+    type: boolean
+    default: false
+  - name: staged
+    type: boolean
+    default: false
+  - name: dryRun
+    type: boolean
+    default: false
+  - name: nodeVersion
+    type: string
+    default: '22.x'
+  - name: install
+    type: boolean
+    default: true        # npm ci before building; off when publishing a prebuilt zip
+
+steps:
+  - task: NodeTool@0
+    displayName: Use Node ${{ parameters.nodeVersion }}
+    inputs:
+      versionSpec: ${{ parameters.nodeVersion }}
+
+  - ${{ if and(parameters.install, eq(parameters.zipPath, '')) }}:
+      - script: npm ci
+        displayName: Install dependencies
+        workingDirectory: ${{ parameters.projectPath }}
+
+  - pwsh: |
+      $params = @{
+        Mode        = '${{ parameters.mode }}'
+        ProjectPath = '${{ parameters.projectPath }}'
+      }
+      if ('${{ parameters.stores }}') { $params.Stores = '${{ parameters.stores }}' -split '[,\s]+' | Where-Object { $_ } }
+      if ('${{ parameters.zipPath }}') { $params.ZipPath = '${{ parameters.zipPath }}' }
+      if ('${{ parameters.noSubmit }}' -eq 'True') { $params.NoSubmit = $true }
+      if ('${{ parameters.staged }}' -eq 'True') { $params.Staged = $true }
+      if ('${{ parameters.dryRun }}' -eq 'True') { $params.DryRun = $true }
+      & '${{ parameters.publisherPath }}/Publish-Extension.ps1' @params
+      exit $LASTEXITCODE
+    name: extension
+    displayName: Extension - ${{ parameters.mode }}
+    env:
+      CHROME_SERVICE_ACCOUNT_JSON: $(CHROME_SERVICE_ACCOUNT_JSON)
+      EDGE_CLIENT_ID: $(EDGE_CLIENT_ID)
+      EDGE_API_KEY: $(EDGE_API_KEY)

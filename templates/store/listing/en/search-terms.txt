@@ -1,0 +1,2 @@
+# Edge only: Partner Center → Store listings → Search terms. One per line.
+# Not shown to users. Lines starting with # are ignored.

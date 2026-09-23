@@ -1,0 +1,64 @@
+# Example for an extension repository in Azure DevOps. Copy to the repo root.
+#
+#   every push / PR   build, test, check the listing, keep the zip as an artifact
+#   tag v*            ...then publish that same zip to both stores, after approval
+#
+# One-time setup (see the toolkit README):
+#   - variable group "extension-store-secrets": CHROME_SERVICE_ACCOUNT_JSON,
+#     EDGE_CLIENT_ID, EDGE_API_KEY - all marked secret
+#   - environment "extension-stores" with an approval check
+
+trigger:
+  branches: { include: [master, main] }
+  tags: { include: ['v*'] }
+pr:
+  branches: { include: [master, main] }
+
+resources:
+  repositories:
+    - repository: publisher
+      type: git
+      name: HN Commercial Division/extension-publisher   # <project>/<repo>
+      ref: refs/heads/main                                # or a tag, to pin a version
+
+stages:
+  - stage: Build
+    jobs:
+      - job: Package
+        pool: { vmImage: ubuntu-latest }
+        steps:
+          - checkout: self
+            path: app
+          - checkout: publisher
+            path: publisher
+          - template: pipelines/azure/publish-extension.yml@publisher
+            parameters:
+              mode: Package
+          - publish: $(Pipeline.Workspace)/app/releases
+            artifact: extension
+
+  - stage: Publish
+    dependsOn: Build
+    condition: and(succeeded(), startsWith(variables['Build.SourceBranch'], 'refs/tags/v'))
+    variables:
+      - group: extension-store-secrets
+    jobs:
+      - deployment: Stores
+        environment: extension-stores     # approval gate lives here
+        pool: { vmImage: ubuntu-latest }
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  path: app
+                - checkout: publisher
+                  path: publisher
+                - pwsh: |
+                    $zip = Get-ChildItem '$(Pipeline.Workspace)/extension/*.zip' | Select-Object -First 1
+                    Write-Host "##vso[task.setvariable variable=zip]$($zip.FullName)"
+                  displayName: Find the package
+                - template: pipelines/azure/publish-extension.yml@publisher
+                  parameters:
+                    mode: Publish
+                    zipPath: $(zip)

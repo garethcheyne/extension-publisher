@@ -55,6 +55,8 @@ script treats any remaining `TODO` as missing.
 
 **`privacy/data-usage.md`**: tick `[x]` a category only when the code gives evidence for it, and under "Where does it go?" name every server from your network notes and what is sent there. If the extension sends nothing anywhere, say so plainly. Where it's unclear whether something counts (for example page text that is read but never leaves the browser), ask the user rather than guess, since a wrong answer here is a policy violation. Leave the three **certifications** unticked and ask the user to confirm them: they are the developer's declarations, not facts you can check.
 
+**`privacy/remote-code.md`**: answer "No" only if every script is in the package: no remote `<script>` tags, no `eval()` or `new Function()`, no code fetched and run at runtime. Fetching JSON or HTML to display is data, not code. If you find remote code, say where, and tell the user it has to be bundled, because Manifest V3 doesn't allow it.
+
 **`privacy/privacy-policy.md`**: write the policy under the explanatory header, based on data-usage.md: what is collected, why, where it's stored, who it's shared with, how long it's kept, and how to contact the developer. Don't make up a contact address or company name; ask, or leave a `TODO:` on that line. Remind the user that the stores need it at a public URL, set as `listing.privacyPolicyUrl` in store.json.
 
 **`listing/<locale>/search-terms.txt`** (Edge only): up to 7 terms, one per line, each 30 characters or less and 21 words in total, describing what users would search for. No competitors' trademarks.

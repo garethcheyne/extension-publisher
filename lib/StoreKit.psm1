@@ -552,6 +552,8 @@ function Test-StoreListing {
     if ($chrome -and (& $isTodo ((Test-Path $single) ? (Get-Content $single -Raw) : ''))) { & $add Error 'chrome' 'store/privacy/single-purpose.md is missing or still has TODOs (Privacy tab: Single purpose).' }
     $usage = Join-Path $store 'privacy/data-usage.md'
     if (& $isTodo ((Test-Path $usage) ? (Get-Content $usage -Raw) : '')) { & $add Warning 'all' 'store/privacy/data-usage.md is missing or still has TODOs.' }
+    $remote = Join-Path $store 'privacy/remote-code.md'
+    if (& $isTodo ((Test-Path $remote) ? (Get-Content $remote -Raw) : '')) { & $add Warning 'all' 'store/privacy/remote-code.md is missing or still has TODOs (Privacy tab: remote code).' }
 
     $permFile = Join-Path $store 'privacy/permissions.md'
     $sections = Get-MarkdownSections $permFile

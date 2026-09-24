@@ -5,6 +5,7 @@ One toolkit to build, check and publish any Chromium extension to the **Chrome W
 | Piece | What it does |
 | --- | --- |
 | [Publish-Extension.ps1](Publish-Extension.ps1) | Build → zip → check listing → upload and submit. The one entry point everything calls. |
+| [New-Extension.ps1](New-Extension.ps1) | Creates a new extension from [templates/extension/](templates/extension/): Vite, React, TypeScript, Tailwind and shadcn/ui, with `store/` ready. |
 | [New-StoreListing.ps1](New-StoreListing.ps1) | Adds a `store/` folder to an extension repo. |
 | [Test-StoreConnection.ps1](Test-StoreConnection.ps1) | Checks the credentials sign in to both stores and shows Chrome's published and in-review versions. Read-only. |
 | [publish-extension.sh](publish-extension.sh) | The same, from bash/sh. |
@@ -27,6 +28,23 @@ It only uploads a zip you give it. This toolkit adds what it doesn't do:
 
 - PowerShell 7.2+ (`pwsh`), preinstalled on Azure DevOps and GitHub hosted agents (Windows, Linux, macOS)
 - Node.js 18+ (for the extension's build and for `npx`)
+
+## Starting a new extension
+
+```powershell
+./New-Extension.ps1 -Path ../TabNotes -Name 'Tab Notes' -Description 'Keep notes next to any page in the side panel.'
+```
+
+This creates a Manifest V3 project with **Vite**, **React**, **TypeScript**, **Tailwind CSS v4** and **[shadcn/ui](https://ui.shadcn.com)**, built with [@crxjs/vite-plugin](https://crxjs.dev), and runs `npm install` and `New-StoreListing.ps1` for you. It includes:
+
+- A side panel (`src/sidepanel/`) that opens from the toolbar icon, with a starter UI built from shadcn components and a light/dark toggle.
+- A service worker (`src/background/`), and `useStorage`, a `useState` backed by `chrome.storage`.
+- `npm run store`, `store:publish` and `store:status` scripts that call this toolkit.
+- Placeholder icons in `public/icons/`, which you replace.
+
+Then run `npm run dev` in the new folder and load `dist/` as an unpacked extension. The project's README has the rest. `-Description` is required because it becomes the manifest description, which both stores show; `-SkipInstall` skips `npm install`, e.g. to use pnpm.
+
+The shadcn files in the template come from `npx shadcn@latest init --template vite --preset nova`. To refresh them, generate a new project the same way and copy `src/components/ui/`, `src/index.css` and `components.json` over.
 
 ## Using it in an extension repo
 
@@ -56,12 +74,12 @@ It only uploads a zip you give it. This toolkit adds what it doesn't do:
 
 ### The store/ folder
 
-```
+```text
 store/
 ├── store.json            build command + output, package options, store IDs (no secrets)
 ├── listing/en/           description.txt, search-terms.txt
 ├── images/               icon-128, logo-300, promo tiles, screenshots/
-├── privacy/              single-purpose, permissions, data-usage, privacy-policy
+├── privacy/              single-purpose, permissions, data-usage, remote-code, privacy-policy
 └── review/               reviewer-notes (test instructions for both stores' reviewers)
 ```
 
@@ -86,7 +104,7 @@ IDs aren't secret, so they live here. `CHROME_EXTENSION_ID`, `CHROME_PUBLISHER_I
 
 ## One-time store setup
 
-Neither API can create a store item. **Upload the first version of each extension by hand**: run `Publish-Extension.ps1` (Package mode) and upload the zip it prints. After that, the script handles every update.
+Neither API can create a store item. **Upload the first version of each extension by hand**, as described in [First release of a new extension](#first-release-of-a-new-extension). After that, the script handles every update.
 
 ### Chrome Web Store: service account (API v2)
 
@@ -138,6 +156,31 @@ Keys are kept out of git and out of the package:
 - This repo ignores every `*.json` except the plugin manifests, since Google names a key `<project>-<hex>.json`. `New-StoreListing.ps1` adds `.env.store`, `*.service-account.json` and that key-name pattern to an extension's `.gitignore`.
 - [.githooks/pre-commit](.githooks/pre-commit) blocks any commit that stages a private key, whatever the file is called. Turn it on once per clone: `git config core.hooksPath .githooks`
 - Packaging refuses to zip a service account key found in the build output, so one can't be shipped to the store.
+
+## First release of a new extension
+
+Neither store's API can create an item. Both can only upload to one that already exists. So each extension's first version is created by hand in each dashboard, once. The toolkit prepares everything for it:
+
+1. **Build the package and check the listing**
+
+   ```powershell
+   ./New-StoreListing.ps1 -ProjectPath ../MyExtension          # if it has no store/ yet
+   ./Publish-Extension.ps1 -ProjectPath ../MyExtension         # zip in releases/, plus anything either store would reject
+   ```
+
+   Fix every error, and don't leave TODOs in `review/reviewer-notes.md` either, although the checks don't cover that file.
+
+2. **Chrome Web Store**: in the [Developer Dashboard](https://chrome.google.com/webstore/devconsole), choose **New item** and upload the zip from `releases/`. Then fill in the tabs from `store/` (`store/README.md` maps each file to its field): **Store listing**, **Privacy** and **Distribution**. Submit for review, or save a draft.
+   Copy the **extension ID**, the 32 letters in the item's dashboard URL, into `store.json` → `stores.chrome.extensionId`.
+
+3. **Edge Add-ons**: in [Partner Center](https://partner.microsoft.com/dashboard/microsoftedge/overview), under Microsoft Edge, choose **Create new extension** and upload the **same zip**. Then fill in **Availability**, **Properties**, **Privacy** and **Store listings** from `store/`, add the reviewer notes, and submit.
+   Copy the **Product ID** from the extension's Overview page into `store.json` → `stores.edge.productId`.
+
+4. **Check the IDs**: run `./Test-StoreConnection.ps1 -ProjectPath ../MyExtension`. Chrome should show the item. Edge's API can't read a product, so the Edge ID is only proven by the next upload.
+
+5. **Every release after that**: bump the version, then run `./Publish-Extension.ps1 -ProjectPath ../MyExtension -Mode Publish`, or push a `v*` tag if the pipeline is set up.
+
+The listing text and images are **not** uploaded by the API, on either the first release or later ones. If they change, update them in the dashboards by hand. `store/` stays the record of what should be there.
 
 ## Pipelines
 

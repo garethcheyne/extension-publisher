@@ -7,5 +7,6 @@ node_modules/
 # <project>-<hex>.json, so ignore all JSON and list the files that are allowed.
 *.json
 !.claude-plugin/*.json
+!templates/extension/*.json
 *.pem
 *.p12

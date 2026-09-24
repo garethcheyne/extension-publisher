@@ -23,6 +23,7 @@ BeforeAll {
         ('A complete description. ' * 20) | Set-Content "$root/store/listing/en/description.txt"
         "# Single purpose`n`nDoes one thing." | Set-Content "$root/store/privacy/single-purpose.md"
         "# Data usage`n`nNothing leaves the browser." | Set-Content "$root/store/privacy/data-usage.md"
+        "# Remote code`n`nNo, all code is in the package." | Set-Content "$root/store/privacy/remote-code.md"
         "# Permissions`n`n## storage`n`nKeeps settings.`n`n## host permissions`n`nReads example.com pages." | Set-Content "$root/store/privacy/permissions.md"
         New-Png "$root/store/images/icon-128.png" 128 128
         New-Png "$root/store/images/logo-300.png" 300 300
@@ -66,6 +67,11 @@ Describe 'Test-StoreListing' {
         $root = New-Project
         "# Permissions`n`n## storage`n`nTODO: why`n`n## host permissions`n`nok" | Set-Content "$root/store/privacy/permissions.md"
         (Get-Findings $root).Message | Should -Contain "store/privacy/permissions.md: '## storage' still has TODOs."
+    }
+    It 'warns when the remote code answer is missing' {
+        $root = New-Project
+        Remove-Item "$root/store/privacy/remote-code.md"
+        (Get-Findings $root | Where-Object Level -eq Warning).Message | Should -Match 'remote-code\.md is missing'
     }
     It 'flags a permission with no justification' {
         $root = New-Project

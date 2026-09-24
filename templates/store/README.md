@@ -5,7 +5,7 @@ The store APIs only accept the package, so the listing text and images are enter
 in each dashboard by hand. This folder is the record of what's there, and the
 publish script checks it against both stores' rules before every upload.
 
-```
+```text
 store/
 ├── store.json                   build, package and store IDs (no secrets)
 ├── .env.store.example           copy to ../.env.store for local publishing (or share one in the toolkit)
@@ -22,6 +22,7 @@ store/
 │   ├── single-purpose.md        Chrome → Privacy → Single purpose
 │   ├── permissions.md           a "## <permission>" justification per manifest permission
 │   ├── data-usage.md            Chrome → Privacy → Data usage (and Edge's questions)
+│   ├── remote-code.md           both stores: "Are you using remote code?"
 │   └── privacy-policy.md        publish it, then set listing.privacyPolicyUrl
 └── review/
     └── reviewer-notes.md        Chrome test instructions · Edge notes for certification
@@ -29,7 +30,7 @@ store/
 
 ## Where each thing goes
 
-| File | Chrome Web Store (Developer Dashboard) | Edge Add-ons (Partner Center) |
+| File | Chrome Web Store ([Developer Dashboard](https://chrome.google.com/webstore/devconsole)) | Edge Add-ons ([Partner Center](https://partner.microsoft.com/dashboard/microsoftedge/overview)) |
 | --- | --- | --- |
 | manifest `name` / `description` | Title and summary - from the package | Name and short description - from the package |
 | listing/…/description.txt | Store listing → Description | Store listings → Description (250-10,000 chars) |
@@ -42,6 +43,7 @@ store/
 | privacy/single-purpose.md | Privacy → Single purpose | Privacy → Purpose |
 | privacy/permissions.md | Privacy → Permission justification | Privacy → Permission justifications |
 | privacy/data-usage.md | Privacy → Data usage | Privacy → Data usage certification |
+| privacy/remote-code.md | Privacy → Are you using remote code? | Privacy → Remote code |
 | store.json listing.privacyPolicyUrl | Privacy → Privacy policy URL | Privacy → Privacy policy |
 | review/reviewer-notes.md | Package → Test instructions | Availability → Notes for certification |
 
@@ -55,4 +57,4 @@ Anything still reading **TODO** counts as missing, so a half-written listing can
 ./Publish-Extension.ps1 -ProjectPath <this repo> -Mode Publish      # …and submit to both stores
 ```
 
-The first version of each store item is uploaded by hand; the APIs only update existing items.
+The first version of each store item is created and uploaded by hand; the APIs only update existing items. Step by step: extension-publisher README, "First release of a new extension".
